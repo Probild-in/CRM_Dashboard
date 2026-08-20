@@ -23,12 +23,37 @@ let connection: Redis | null = null;
 let queue: Queue | null = null;
 
 export function getConnection(): Redis {
+  if (connection) return connection;
+
   // BullMQ needs `maxRetriesPerRequest: null` — it manages its own retries and
   // an ioredis-level limit would abort blocking commands mid-wait.
-  connection ??= new Redis(env.REDIS_URL, {
+  const client = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
+    /*
+     * Back off, and stop after a minute of failure.
+     *
+     * ioredis retries forever by default, and an unreachable Redis then fills
+     * the logs with the same stack trace several times a second — which buries
+     * whatever actually went wrong. The API does not need Redis to serve
+     * requests, so giving up quietly is the honest behaviour.
+     */
+    retryStrategy: (attempt) => (attempt > 10 ? null : Math.min(attempt * 500, 5_000)),
   });
+
+  // Log the first failure properly, then once a minute at most.
+  let lastLoggedAt = 0;
+  client.on('error', (error: Error) => {
+    const now = Date.now();
+    if (now - lastLoggedAt < 60_000) return;
+    lastLoggedAt = now;
+    logger.error(
+      { err: error, redis: env.REDIS_URL },
+      'Redis is unreachable — automation reminders are paused. The rest of the API is unaffected.',
+    );
+  });
+
+  connection = client;
   return connection;
 }
 
