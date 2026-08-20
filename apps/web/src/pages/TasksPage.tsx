@@ -7,20 +7,49 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Field';
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/ui/States';
 import { Pagination } from '@/components/ui/Table';
+import { Badge } from '@/components/ui/Badge';
+import { PRIORITY_TONES } from '@/components/ui/tones';
+import { Board, type BoardColumn } from '@/components/ui/Board';
+import { ViewToggle } from '@/components/ui/ViewToggle';
+import { useViewMode } from '@/hooks/useViewMode';
+import { toast } from 'sonner';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useUsers } from '@/features/users/api';
 import { useProjects } from '@/features/projects/api';
 import { TaskFormModal } from '@/features/tasks/TaskFormModal';
 import { TaskDetailModal } from '@/features/tasks/TaskDetailModal';
 import { TaskRow } from '@/features/tasks/TaskRow';
-import { useTaskSummary, useTasks } from '@/features/tasks/api';
+import { useTaskSummary, useTasks, useChangeTaskStatus } from '@/features/tasks/api';
 import type { Task } from '@/features/tasks/types';
 import { toMessage } from '@/lib/api';
-import { cn, humanise } from '@/lib/utils';
+import { cn, humanise, relativeTime } from '@/lib/utils';
+
+/*
+ * Live work gets a column; finished work gets a drop zone.
+ *
+ * There is deliberately no "Overdue" column. Lateness is derived from due_at on
+ * every read, not stored — a late task still reports what someone is actually
+ * doing with it, and a column would turn that back into a status.
+ */
+const BOARD_COLUMNS: BoardColumn<TaskStatus>[] = [
+  { status: TaskStatus.TODO, label: 'To do' },
+  { status: TaskStatus.IN_PROGRESS },
+  { status: TaskStatus.REVIEW },
+  { status: TaskStatus.BLOCKED },
+];
+
+const BOARD_COLLAPSED: BoardColumn<TaskStatus>[] = [
+  { status: TaskStatus.COMPLETED },
+  { status: TaskStatus.CANCELLED },
+];
+
+const BOARD_PAGE_SIZE = 100;
 
 export default function TasksPage() {
   const { can, user } = useAuth();
   const canWrite = can(PERMISSIONS.TASK_WRITE);
+  const [view, setView] = useViewMode('tasks');
+  const changeStatus = useChangeTaskStatus();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -41,8 +70,8 @@ export default function TasksPage() {
   const projects = useProjects({ page: 1, pageSize: 100, activeOnly: true });
 
   const query = useTasks({
-    page,
-    pageSize: 25,
+    page: view === 'board' ? 1 : page,
+    pageSize: view === 'board' ? BOARD_PAGE_SIZE : 25,
     search,
     status,
     priority,
@@ -54,6 +83,15 @@ export default function TasksPage() {
     sortBy: 'dueAt',
     sortOrder: 'asc',
   });
+
+  const moveTask = async (task: Task, next: TaskStatus): Promise<void> => {
+    try {
+      await changeStatus.mutateAsync({ id: task.id, status: next });
+      toast.success(`${task.reference} moved to ${humanise(next)}`);
+    } catch (error) {
+      toast.error(toMessage(error));
+    }
+  };
 
   const change = <T,>(setter: (value: T) => void) => (value: T) => {
     setter(value);
@@ -121,19 +159,21 @@ export default function TasksPage() {
             aria-label="Search tasks"
             className="h-9 max-w-xs"
           />
-          <Select
-            value={status}
-            onChange={(event) => change(setStatus)(event.target.value as TaskStatus | '')}
-            aria-label="Filter by status"
-            className="h-9 w-auto"
-          >
-            <option value="">All statuses</option>
-            {Object.values(TaskStatus).map((value) => (
-              <option key={value} value={value}>
-                {humanise(value)}
-              </option>
-            ))}
-          </Select>
+          {view === 'list' ? (
+            <Select
+              value={status}
+              onChange={(event) => change(setStatus)(event.target.value as TaskStatus | '')}
+              aria-label="Filter by status"
+              className="h-9 w-auto"
+            >
+              <option value="">All statuses</option>
+              {Object.values(TaskStatus).map((value) => (
+                <option key={value} value={value}>
+                  {humanise(value)}
+                </option>
+              ))}
+            </Select>
+          ) : null}
           <Select
             value={priority}
             onChange={(event) => change(setPriority)(event.target.value as Priority | '')}
@@ -175,6 +215,7 @@ export default function TasksPage() {
               ))}
             </Select>
           ) : null}
+          <ViewToggle value={view} onChange={setView} className="ml-auto" />
         </div>
 
         {query.isPending ? (
@@ -208,6 +249,60 @@ export default function TasksPage() {
             }
           />
         ) : (
+          view === 'board' ? (
+            <Board<Task, TaskStatus>
+              columns={BOARD_COLUMNS}
+              collapsed={BOARD_COLLAPSED}
+              items={query.data.items}
+              getId={(task) => task.id}
+              getStatus={(task) => task.status}
+              canMove={canWrite}
+              onMove={(task, next) => void moveTask(task, next)}
+              emptyLabel="Nothing here"
+              footer={
+                query.data.meta.total > query.data.items.length ? (
+                  <p className="px-1 pt-3 text-xs text-ink-faint">
+                    Showing the first {query.data.items.length} of {query.data.meta.total}. Narrow
+                    the filters to see the rest on the board, or switch to the list.
+                  </p>
+                ) : null
+              }
+              renderCard={(task) => (
+                <button
+                  type="button"
+                  onClick={() => setViewing(task)}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate text-[0.8125rem] font-medium text-ink hover:text-accent">
+                      {task.title}
+                    </p>
+                    <Badge tone={PRIORITY_TONES[task.priority] ?? 'neutral'}>{task.priority}</Badge>
+                  </div>
+                  {task.project ? (
+                    <p className="mt-0.5 truncate text-xs text-ink-soft">{task.project.name}</p>
+                  ) : null}
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="truncate text-[0.6875rem] text-ink-faint">
+                      {task.assignee
+                        ? `${task.assignee.firstName} ${task.assignee.lastName}`
+                        : 'Unassigned'}
+                    </span>
+                    {task.dueAt ? (
+                      <span
+                        className={cn(
+                          'font-mono text-[0.625rem]',
+                          task.isOverdue ? 'font-medium text-danger' : 'text-ink-faint',
+                        )}
+                      >
+                        {relativeTime(task.dueAt)}
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              )}
+            />
+          ) : (
           <>
             <ul className="divide-y divide-line">
               {query.data.items.map((task) => (
@@ -216,6 +311,7 @@ export default function TasksPage() {
             </ul>
             <Pagination meta={query.data.meta} onPageChange={setPage} label="tasks" />
           </>
+          )
         )}
       </Panel>
 

@@ -11,16 +11,40 @@ import { PRIORITY_TONES, PROJECT_STATUS_TONES } from '@/components/ui/tones';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/ui/States';
 import { Pagination, TableWrap, Td, Th } from '@/components/ui/Table';
+import { Board, type BoardColumn } from '@/components/ui/Board';
+import { ViewToggle } from '@/components/ui/ViewToggle';
+import { useViewMode } from '@/hooks/useViewMode';
+import { toast } from 'sonner';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useUsers } from '@/features/users/api';
 import { ProjectFormModal } from '@/features/projects/ProjectFormModal';
-import { useProjectSummary, useProjects } from '@/features/projects/api';
+import { useProjectSummary, useProjects, useChangeProjectStatus } from '@/features/projects/api';
+import type { Project } from '@/features/projects/types';
 import { toMessage } from '@/lib/api';
 import { cn, formatDate, formatMoney, humanise, relativeTime } from '@/lib/utils';
+
+/** Work in progress gets a column; finished work gets a drop zone. */
+const BOARD_COLUMNS: BoardColumn<ProjectStatus>[] = [
+  { status: ProjectStatus.PLANNING },
+  { status: ProjectStatus.ACTIVE },
+  { status: ProjectStatus.ON_HOLD },
+  { status: ProjectStatus.IN_REVIEW },
+  { status: ProjectStatus.CLIENT_REVIEW },
+];
+
+const BOARD_COLLAPSED: BoardColumn<ProjectStatus>[] = [
+  { status: ProjectStatus.COMPLETED },
+  { status: ProjectStatus.CANCELLED },
+];
+
+/** The board shows everything at once, so it asks for as much as the API allows. */
+const BOARD_PAGE_SIZE = 100;
 
 export default function ProjectsPage() {
   const { can } = useAuth();
   const canWrite = can(PERMISSIONS.PROJECT_WRITE);
+  const [view, setView] = useViewMode('projects');
+  const changeStatus = useChangeProjectStatus();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -33,8 +57,8 @@ export default function ProjectsPage() {
   const summary = useProjectSummary();
   const team = useUsers({ page: 1, pageSize: 100 });
   const query = useProjects({
-    page,
-    pageSize: 20,
+    page: view === 'board' ? 1 : page,
+    pageSize: view === 'board' ? BOARD_PAGE_SIZE : 20,
     search,
     status,
     priority,
@@ -43,6 +67,16 @@ export default function ProjectsPage() {
     overdue: quickFilter === 'overdue',
     dueSoon: quickFilter === 'dueSoon',
   });
+
+  const moveProject = async (project: Project, next: ProjectStatus): Promise<void> => {
+    try {
+      await changeStatus.mutateAsync({ id: project.id, status: next });
+      toast.success(`${project.reference} moved to ${humanise(next)}`);
+    } catch (error) {
+      // The card snaps back because the list re-renders from server state.
+      toast.error(toMessage(error));
+    }
+  };
 
   const change = <T,>(setter: (value: T) => void) => (value: T) => {
     setter(value);
@@ -105,19 +139,21 @@ export default function ProjectsPage() {
             aria-label="Search projects"
             className="h-9 max-w-xs"
           />
-          <Select
-            value={status}
-            onChange={(event) => change(setStatus)(event.target.value as ProjectStatus | '')}
-            aria-label="Filter by status"
-            className="h-9 w-auto"
-          >
-            <option value="">All statuses</option>
-            {Object.values(ProjectStatus).map((value) => (
-              <option key={value} value={value}>
-                {humanise(value)}
-              </option>
-            ))}
-          </Select>
+          {view === 'list' ? (
+            <Select
+              value={status}
+              onChange={(event) => change(setStatus)(event.target.value as ProjectStatus | '')}
+              aria-label="Filter by status"
+              className="h-9 w-auto"
+            >
+              <option value="">All statuses</option>
+              {Object.values(ProjectStatus).map((value) => (
+                <option key={value} value={value}>
+                  {humanise(value)}
+                </option>
+              ))}
+            </Select>
+          ) : null}
           <Select
             value={priority}
             onChange={(event) => change(setPriority)(event.target.value as Priority | '')}
@@ -144,6 +180,7 @@ export default function ProjectsPage() {
               </option>
             ))}
           </Select>
+          <ViewToggle value={view} onChange={setView} className="ml-auto" />
         </div>
 
         {query.isPending ? (
@@ -169,6 +206,66 @@ export default function ProjectsPage() {
             }
           />
         ) : (
+          view === 'board' ? (
+            <Board<Project, ProjectStatus>
+              columns={BOARD_COLUMNS}
+              collapsed={BOARD_COLLAPSED}
+              items={query.data.items}
+              getId={(project) => project.id}
+              getStatus={(project) => project.status}
+              canMove={canWrite}
+              onMove={(project, next) => void moveProject(project, next)}
+              emptyLabel="Nothing at this stage"
+              footer={
+                query.data.meta.total > query.data.items.length ? (
+                  <p className="px-1 pt-3 text-xs text-ink-faint">
+                    Showing the first {query.data.items.length} of {query.data.meta.total}. Narrow
+                    the filters to see the rest on the board, or switch to the list.
+                  </p>
+                ) : null
+              }
+              renderCard={(project) => (
+                <Link to={`/projects/${project.id}`} className="block">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate text-[0.8125rem] font-medium text-ink hover:text-accent">
+                      {project.name}
+                    </p>
+                    <Badge tone={PRIORITY_TONES[project.priority] ?? 'neutral'}>
+                      {project.priority}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-ink-soft">
+                    {project.client.companyName}
+                  </p>
+                  <div className="mt-2">
+                    <ProgressBar
+                      value={project.progress}
+                      tone={project.isOverdue ? 'warning' : 'accent'}
+                      showLabel
+                    />
+                  </div>
+                  <p className="tabular mt-2 font-mono text-xs text-ink-soft">
+                    {formatMoney(project.value, project.currency)}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-[0.625rem] text-ink-faint">
+                      {project.reference}
+                    </span>
+                    {project.deliveryDate ? (
+                      <span
+                        className={cn(
+                          'font-mono text-[0.625rem]',
+                          project.isOverdue ? 'font-medium text-danger' : 'text-ink-faint',
+                        )}
+                      >
+                        {relativeTime(project.deliveryDate)}
+                      </span>
+                    ) : null}
+                  </div>
+                </Link>
+              )}
+            />
+          ) : (
           <>
             <TableWrap>
               <thead>
@@ -245,6 +342,7 @@ export default function ProjectsPage() {
             </TableWrap>
             <Pagination meta={query.data.meta} onPageChange={setPage} label="projects" />
           </>
+          )
         )}
       </Panel>
 

@@ -44,7 +44,9 @@ function slugify(value: string): string {
 
 async function main(): Promise<void> {
   // Supabase owns the credential; the profile row below shares its id.
-  const authId = await ensureAuthUser(env.SEED_ADMIN_EMAIL, env.SEED_ADMIN_PASSWORD);
+  const authId = await ensureAuthUser(env.SEED_ADMIN_EMAIL, env.SEED_ADMIN_PASSWORD, {
+    warnIfExisting: true,
+  });
 
   const admin = await prisma.user.upsert({
     where: { email: env.SEED_ADMIN_EMAIL },

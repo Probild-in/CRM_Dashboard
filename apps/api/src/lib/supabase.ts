@@ -73,7 +73,11 @@ async function findAuthUserByEmail(email: string): Promise<string | null> {
  * present in `auth.users` but not in `users` — must be recoverable rather than
  * a permanent block.
  */
-export async function ensureAuthUser(email: string, password: string): Promise<string> {
+export async function ensureAuthUser(
+  email: string,
+  password: string,
+  options: { warnIfExisting?: boolean } = {},
+): Promise<string> {
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
@@ -94,6 +98,20 @@ export async function ensureAuthUser(email: string, password: string): Promise<s
       `Supabase reports ${email} is already registered but the account could not be found.`,
     );
   }
+
+  /*
+   * The account is reused as-is; its password is NOT changed. Silently ignoring
+   * a different password is how someone ends up certain the seed set one thing
+   * while Supabase holds another — so say it out loud.
+   */
+  if (options.warnIfExisting) {
+    console.warn(
+      `! ${email} already exists in Supabase Auth. Its EXISTING password is unchanged — ` +
+        `the value in SEED_ADMIN_PASSWORD was not applied. Sign in with the original ` +
+        `password, or reset it from Supabase Dashboard → Authentication → Users.`,
+    );
+  }
+
   return existing;
 }
 
