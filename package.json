@@ -1,0 +1,42 @@
+{
+  "name": "probild-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Probild internal CRM and Business Management System",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w @probild/api",
+    "dev:web": "npm run dev -w @probild/web",
+    "build": "npm run build -w @probild/shared && npm run build -w @probild/api && npm run build -w @probild/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @probild/api",
+    "db:migrate": "npm run db:migrate -w @probild/api",
+    "db:seed": "npm run db:seed -w @probild/api",
+    "db:studio": "npm run db:studio -w @probild/api",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
+    "dev:worker": "npm run worker -w @probild/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.67.0"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

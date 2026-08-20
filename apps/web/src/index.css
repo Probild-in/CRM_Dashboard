@@ -1,0 +1,200 @@
+@import 'tailwindcss';
+
+/* Theme is chosen explicitly and stored, so the toggle wins over the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Probild CRM palette.
+ *
+ * The rule the whole interface follows: colour means status. Surfaces are
+ * neutral, actions are one blue, and warm tones are reserved for things that
+ * are late or about to be. Nothing decorative borrows those hues.
+ */
+:root {
+  --app-canvas: #f6f7f9;
+  --app-panel: #ffffff;
+  --app-panel-muted: #fafbfc;
+  --app-ink: #10151c;
+  --app-ink-soft: #47536b;
+  --app-ink-faint: #78849b;
+  --app-line: #e3e7ee;
+  --app-line-strong: #cfd6e2;
+
+  --app-accent: #1f4fd8;
+  --app-accent-soft: #eaefff;
+  --app-accent-ink: #ffffff;
+
+  --app-danger: #b42318;
+  --app-danger-soft: #fef3f2;
+  --app-warning: #b54708;
+  --app-warning-soft: #fff8ef;
+  --app-success: #067647;
+  --app-success-soft: #edfdf4;
+  --app-neutral-soft: #f1f3f7;
+
+  /*
+   * Chart series.
+   *
+   * Separate from the UI accent on purpose: chart marks sit inside a plot and
+   * need their own lightness band. These two hues pass all six checks of the
+   * data-viz validator on a white surface — lightness band, chroma floor,
+   * colour-blind separation (ΔE 30.1 protan), normal-vision separation
+   * (ΔE 40.5) and 3:1 contrast.
+   */
+  --app-series-1: #1f4fd8;
+  --app-series-2: #eb6834;
+  --app-grid: #eef1f6;
+}
+
+.dark {
+  --app-canvas: #0b0f16;
+  --app-panel: #121823;
+  --app-panel-muted: #161e2b;
+  --app-ink: #e8edf5;
+  --app-ink-soft: #a3aec2;
+  --app-ink-faint: #7a8599;
+  --app-line: #212a39;
+  --app-line-strong: #2e3a4d;
+
+  --app-accent: #6f95ff;
+  --app-accent-soft: #17223c;
+  --app-accent-ink: #0b0f16;
+
+  --app-danger: #ff8a7d;
+  --app-danger-soft: #2a1614;
+  --app-warning: #f5b26b;
+  --app-warning-soft: #2a1d10;
+  --app-success: #5ed6a0;
+  --app-success-soft: #0f2620;
+  --app-neutral-soft: #1a2231;
+
+  /* Re-stepped for the dark panel, not flipped. Validated on #121823. */
+  --app-series-1: #3987e5;
+  --app-series-2: #d95926;
+  --app-grid: #1b2433;
+}
+
+@theme inline {
+  --color-canvas: var(--app-canvas);
+  --color-panel: var(--app-panel);
+  --color-panel-muted: var(--app-panel-muted);
+  --color-ink: var(--app-ink);
+  --color-ink-soft: var(--app-ink-soft);
+  --color-ink-faint: var(--app-ink-faint);
+  --color-line: var(--app-line);
+  --color-line-strong: var(--app-line-strong);
+
+  --color-accent: var(--app-accent);
+  --color-accent-soft: var(--app-accent-soft);
+  --color-accent-ink: var(--app-accent-ink);
+
+  --color-danger: var(--app-danger);
+  --color-danger-soft: var(--app-danger-soft);
+  --color-warning: var(--app-warning);
+  --color-warning-soft: var(--app-warning-soft);
+  --color-success: var(--app-success);
+  --color-success-soft: var(--app-success-soft);
+  --color-neutral-soft: var(--app-neutral-soft);
+  --color-series-1: var(--app-series-1);
+  --color-series-2: var(--app-series-2);
+  --color-grid: var(--app-grid);
+
+  --font-display: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --radius-panel: 0.5rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--app-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--app-canvas);
+    color: var(--app-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv05' 1, 'ss01' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Keyboard focus stays visible everywhere; pointer clicks stay quiet. */
+  :focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--app-accent-soft);
+    color: var(--app-ink);
+  }
+}
+
+@layer utilities {
+  /*
+   * The signature device: a 2px marker on the leading edge. It appears on the
+   * active nav item, on rows that need attention, and on section headers —
+   * always meaning "this one", never as decoration.
+   */
+  .edge-marker {
+    position: relative;
+  }
+
+  .edge-marker::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 2px;
+    background: currentColor;
+  }
+
+  /*
+   * The same marker, for table rows.
+   *
+   * `.edge-marker` positions a pseudo-element absolutely, which a <tr> cannot
+   * host — the row's layout collapses. A border on the first cell reads the
+   * same and survives border-collapse.
+   */
+  .edge-marker-row > td:first-child,
+  .edge-marker-row > th:first-child {
+    border-left: 2px solid currentColor;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--app-ink-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
