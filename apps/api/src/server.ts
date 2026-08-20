@@ -9,27 +9,34 @@ async function main(): Promise<void> {
 
   const app = createApp();
 
-  /*
-   * Single-service deployment: run the automation worker in this process.
-   *
-   * A failure here must not stop the API — the CRM works without the worker,
-   * reminders simply stop being raised, and the next scan catches up.
-   */
-  let stopWorker: (() => Promise<void>) | null = null;
-  if (env.RUN_WORKER) {
-    try {
-      const { startAutomationWorker } = await import('./worker.js');
-      stopWorker = await startAutomationWorker();
-    } catch (error) {
-      logger.error({ err: error }, 'The automation worker could not start; the API continues');
-    }
-  }
   const server = app.listen(env.PORT, () => {
     logger.info(
       { port: env.PORT, env: env.NODE_ENV },
       `Probild CRM API listening on http://localhost:${env.PORT}`,
     );
   });
+
+  /*
+   * Single-service deployment: run the automation worker in this process.
+   *
+   * Started AFTER the server is listening, and deliberately not awaited. The
+   * worker needs Redis; the API does not. Awaiting it meant an unreachable
+   * Redis blocked `listen` through every connection retry, so the health check
+   * failed and the container was killed — the API taken down by a dependency it
+   * does not need. The CRM works without the worker: reminders simply stop being
+   * raised, and the next scan catches up.
+   */
+  let stopWorker: (() => Promise<void>) | null = null;
+  if (env.RUN_WORKER) {
+    void (async () => {
+      try {
+        const { startAutomationWorker } = await import('./worker.js');
+        stopWorker = await startAutomationWorker();
+      } catch (error) {
+        logger.error({ err: error }, 'The automation worker could not start; the API continues');
+      }
+    })();
+  }
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'Shutting down');
