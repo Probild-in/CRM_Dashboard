@@ -22,7 +22,32 @@ export function createApp(): Express {
   app.disable('x-powered-by');
 
   app.use(requestContext);
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+  /*
+   * Helmet's default CSP sets `default-src 'self'` and no `connect-src`, so the
+   * browser refuses every request to another origin. That is fine while Express
+   * only serves JSON — but the client signs in against Supabase directly, and
+   * when this process also serves the HTML (SERVE_WEB) that policy travels with
+   * the page and blocks authentication outright.
+   *
+   * So Supabase is named explicitly. Nothing else is opened up.
+   */
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'connect-src': ["'self'", env.SUPABASE_URL],
+          // Vite fingerprints its output; no inline or remote scripts are used.
+          'script-src': ["'self'"],
+          // Google Fonts is linked from index.html.
+          'style-src': ["'self'", 'https:', "'unsafe-inline'"],
+          'font-src': ["'self'", 'https:', 'data:'],
+          'img-src': ["'self'", 'data:', 'blob:'],
+        },
+      },
+    }),
+  );
   app.use(
     cors({
       origin: env.CORS_ORIGINS,
